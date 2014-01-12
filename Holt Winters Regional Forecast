@@ -1,0 +1,106 @@
+###########################################################################
+# 
+# Title:    Regional Holt Winters with Territory Allocation (Script 1 of 1)
+# 
+# Author:   Raf
+#
+# Purpose:  Holt Winters Forecast for Goal Setting Baseline Calculation
+#           
+#
+# Description of Input Files:
+#           1.) ForecastData_PROD_Monthly_Terr.csv --- From SAS Code, Territory-Month Level Sales (24 months of monthly data by geography)
+#       
+# Instructions:
+#           1.) Load input files into the folder "../Inputs/HoltWinters"
+#           2.) Run Code
+#
+# Depedencies: 
+#           1.) Requires that you have the forecast package installed
+#           2.) Requires that you have the reshape2 packaged installed
+#
+#
+# NOTES:
+#           1.) Pending Filtering out non-useful Age Buckets in SAS Processing
+#           2.) Need to identify the right time series frequency (currently at 12 month)
+#           3.) Need to identify apporach to calculate upcoming quarter - use monthly data as basis (current)?
+#           4.) Dataset does analysis at region level to ensure enough sales to depict seasonality (prevents small terrs from innacurate forecasting)
+#           5.) Forecast for Contributions at Region level will need to be split between region territories using historical terr data
+#
+#
+###########################################################################
+
+
+# Load necessary packages
+library(forecast)
+library(reshape2)
+
+
+# Set Working Directory
+setwd("C:/R Code/Input Files/HoltWinters")
+
+
+
+# Load Raw Data -- CHANGE "UP" to "PROD" if Calculating "PROD" Historical Contribution
+Input <- read.csv("ForecastData_UP_Monthly_Terr.csv", sep = ",", header = T)
+
+
+
+# Pivot Data
+PivotInput <- dcast(Input, Territory_ID ~ month_num)
+
+
+
+# Create Region Field
+PivotInput$Region <- substr(PivotInput$Territory_ID, 1, 3)
+
+
+
+# Sort Sum at Region
+RegionInput <- ddply(PivotInput, .(Region), numcolwise(sum, na.rm=T))
+RegionClean <- subset(RegionInput, select = -c(1))
+
+
+# Create Dummy Database to Collect Data in For Loop
+
+F1 <- c(0)
+F2 <- c(0)
+F3 <- c(0)
+F4 <- c(0)
+F5 <- c(0)
+Region <- c("UU")
+
+X <- data.frame(Region, F1, F2, F3, F4, F5)
+
+# Loop over 51 Regions to calculate expected sales over next five months (due to 2 month data delay)
+
+for(n in 1:51) {
+
+Vector <- unlist(RegionClean[n,])
+
+VectorTS <- ts(rev(Vector), frequency = 12)
+
+VectorHW <- hw(VectorTS,5)
+
+VectorOutRaw <- data.frame(VectorHW$mean)
+VectorOutRaw$Region <- RegionInput$Region[n]
+VectorOutRaw$Month <- rownames(VectorOutRaw)
+VectorOutPivot <- dcast(VectorOutRaw,Region ~ Month, value.var = "VectorHW.mean")
+colnames(VectorOutPivot) <- c("Region", "F1", "F2", "F3", "F4", "F5")
+
+X <- rbind(X, VectorOutPivot)
+
+}
+
+# output file creation
+
+output <- X
+
+# Save Output File to directory
+
+setwd("../../Output Files/HoltWinters")
+
+write.csv(output, "Forecast_HoltWinters_UP.csv", row.names=F)
+
+# Remove All Unneeded Objects
+
+rm(list=setdiff(ls(), "output"))
